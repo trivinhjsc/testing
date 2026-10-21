@@ -200,7 +200,7 @@ function cleanReminderTitle(text) {
     )
     .replace(/\bngày\s+\d{1,2}\s*[/-]\s*\d{1,2}(?:\s*[/-]\s*\d{4})?/gi, " ")
     .replace(/\bngày\s+\d{1,2}\s+tháng\s+\d{1,2}(?:\s+năm\s+\d{4})?/gi, " ")
-    .replace(/\b(?:ngày\s+mai|hôm\s+nay|hom\s+nay|chiều\s+nay|tối\s+nay|sáng\s+nay|trưa\s+nay|tomorrow)\b/gi, " ")
+    .replace(/\b(?:ngày\s+mai|\bmai\b|hôm\s+nay|hom\s+nay|chiều\s+nay|tối\s+nay|sáng\s+nay|trưa\s+nay|tomorrow)\b/gi, " ")
     .replace(/\b(?:thứ\s+(?:hai|ba|tư|tu|năm|sáu|sau|bảy|bay)|chủ\s+nhật|chu\s+nhat)\b/gi, " ")
     .replace(/\b(?:lúc|luc|vào|vao|khoảng|khoang)\b/gi, " ")
     .replace(/[,.!?;:–—-]+$/g, "")

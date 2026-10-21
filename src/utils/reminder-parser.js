@@ -288,11 +288,21 @@ export function parseReminderRequest(text, now = new Date()) {
   }
 
   // Hủy lịch nhắc theo số thứ tự.
+  // Hỗ trợ cụm "nhắc hẹn", "lịch nhắc hẹn", v.v. Số thứ tự là tuỳ chọn.
   const cancel = lower.match(
-    /(?:hủy|huỷ|huy|xóa|xoá|xoa|bỏ|bo)\s+(?:lịch\s+)?(?:nhắc|nhac|hẹn|hen)(?:\s+(?:lịch\s+)?(?:số|so))?\s*(\d+)/i,
+    /(?:hủy|huỷ|huy|xóa|xoá|xoa|bỏ|bo)\s+(?:lịch\s+)?(?:nhắc\s+hẹn|nhắc\s+nhở|nhắc|nhac|hẹn|hen)(?:\s+(?:lịch\s+)?(?:số|so))?\s*(\d+)?/i,
   )
 
   if (cancel) {
+    if (!cancel[1]) {
+      // Nhận ra lệnh xóa nhưng không có số thứ tự → hướng dẫn người dùng.
+      return {
+        type: "invalid",
+        reply:
+          "Bạn muốn xóa lịch nhắc số mấy? Nhắn \"xem lịch nhắc\" để xem danh sách, rồi nhắn ví dụ: \"Xóa lịch nhắc số 1\".",
+      }
+    }
+
     return {
       type: "cancel",
       number: Number(cancel[1]),

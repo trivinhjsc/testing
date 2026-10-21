@@ -1,4 +1,4 @@
 export function getEnv(name) {
-  const value = process.env[name];
-  return typeof value === "string" ? value.trim() : "";
+  const value = Deno.env.get(name)
+  return typeof value === "string" ? value.trim() : ""
 }

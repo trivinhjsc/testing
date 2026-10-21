@@ -2,34 +2,33 @@ import { isAuthorizedWebhook } from "./src/middlewares/auth.middleware.js"
 import { handleMessageEvent } from "./src/handlers/message.handler.js"
 import { logger } from "./src/utils/logger.js"
 
-export default async function handler(req, res) {
+async function handler(req) {
   // Kiểm tra endpoint.
   if (req.method !== "POST") {
-    return res.status(200).send("Zalo Bot is running!")
+    return new Response("Zalo Bot is running!", { status: 200 })
   }
 
   // Xác thực webhook.
   if (!isAuthorizedWebhook(req)) {
     logger.warn("Unauthorized webhook attempt")
-    return res.status(401).json({ error: "Unauthorized" })
+    return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   try {
-    const body =
-      typeof req.body === "string"
-        ? JSON.parse(req.body)
-        : req.body
+    const body = await req.json()
 
     logger.info("Incoming Zalo event:", body?.event_name)
 
     const result = await handleMessageEvent(body)
 
-    return res.status(200).json(result)
+    return Response.json(result, { status: 200 })
   } catch (error) {
     logger.error("Webhook error:", error)
 
     // Giữ chính sách hiện tại: không yêu cầu Zalo retry
     // khi xảy ra lỗi xử lý nội bộ.
-    return res.status(200).json({ ok: false })
+    return Response.json({ ok: false }, { status: 200 })
   }
 }
+
+Deno.serve(handler)

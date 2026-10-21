@@ -7,7 +7,7 @@ và phản hồi tin nhắn.
 
 ## Cấu trúc
 
-- `api/webhook.js`: HTTP entry point.
+- `main.js`: HTTP entry point.
 - `src/middlewares/auth.middleware.js`: xác thực webhook.
 - `src/handlers/message.handler.js`: xử lý sự kiện tin nhắn.
 - `src/services/zalo.service.js`: giao tiếp với Zalo Bot API.

@@ -82,3 +82,25 @@ Deno.test("asks for a time when none is present", () => {
     "request type",
   );
 });
+
+Deno.test("parses an implicit appointment with shorthand hour", () => {
+  const now = new Date("2026-10-21T10:00:00.000Z");
+  const result = parseReminderRequest("mai 8h tôi có hẹn", now);
+
+  assertEquals(result.type, "create", "request type");
+  assertEquals(result.title, "tôi có hẹn", "reminder title");
+  assertEquals(
+    result.dueAt,
+    new Date("2026-10-22T01:00:00.000Z").getTime(),
+    "due time",
+  );
+});
+
+Deno.test("does not treat ordinary chat as a reminder", () => {
+  const now = new Date("2026-10-21T10:00:00.000Z");
+  assertEquals(
+    parseReminderRequest("Tôi chào bạn", now).type,
+    "none",
+    "request type",
+  );
+});

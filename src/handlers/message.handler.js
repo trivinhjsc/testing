@@ -18,7 +18,8 @@ export async function handleMessageEvent(body) {
   }
 
   const chatId = body.message.chat.id;
-  const userMessage = body.message.text.trim();
+  // Loại bỏ phần tag mention (@TênBot) ở đầu tin nhắn khi được tag trong nhóm.
+  const userMessage = body.message.text.trim().replace(/^@\S+\s*/u, "").trim();
 
   if (!userMessage) {
     return { ok: true, ignored: true };

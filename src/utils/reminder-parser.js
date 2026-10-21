@@ -1,7 +1,7 @@
 const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 const TIME_PATTERN =
-  /(?:\b(?:lúc|luc|vào|vao|khoảng|khoang)\s*)?(\d{1,2})(?:\s*[:h]\s*(\d{2})|\s*(?:giờ|gio)(?:\s*(\d{1,2}))?)\s*(sáng|sang|trưa|trua|chiều|chieu|tối|toi|đêm|dem)?/i;
+  /\b(?:(?:lúc|luc|vào|vao|khoảng|khoang)\s*)?(\d{1,2})(?:\s*[:h]\s*(\d{1,2})?|\s*(?:giờ|gio)(?:\s*(\d{1,2}))?)\s*(sáng|sang|trưa|trua|chiều|chieu|tối|toi|đêm|dem)?/i;
 
 function vietnamParts(date) {
   const shifted = new Date(date.getTime() + VN_OFFSET_MS);
@@ -225,12 +225,20 @@ export function parseReminderRequest(text, now = new Date()) {
     return { type: "cancel", number: Number(cancel[1]) };
   }
 
-  if (!/\bnhắc\b|\bnhac\b/i.test(lower)) {
+  const hasExplicitReminderWord = /\bnhắc\b|\bnhac\b/i.test(lower);
+  const hasImplicitEventCue =
+    /\b(?:hẹn|hen|lịch|họp|hop|đón|don|đưa|dua|gặp|gap|gọi|goi|khám|kham|sinh nhật|sự kiện|su kien|nộp|nop|đóng tiền|dong tien|thanh toán|thanh toan|lễ|le|đi học|di hoc|đi làm|di lam|lấy|lay|chở|cho)\b/i.test(lower);
+
+  // Cho phép câu tự nhiên như "mai 8h tôi có hẹn", không bắt buộc phải có chữ "nhắc".
+  // Chỉ hiểu là lịch nhắc ngầm khi câu có dấu hiệu sự kiện và có thời điểm rõ ràng.
+  if (!hasExplicitReminderWord && !hasImplicitEventCue) {
     return { type: "none" };
   }
 
   const schedule = parseSchedule(text, now);
   if (schedule.error) {
+    // Câu không có chữ "nhắc" mà thiếu thời gian không nên bị coi là lệnh nhắc.
+    if (!hasExplicitReminderWord) return { type: "none" };
     return { type: "invalid", reply: schedule.error };
   }
 

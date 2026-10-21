@@ -1,5 +1,8 @@
 const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
 
+const TIME_PATTERN =
+  /(?:\b(?:lúc|luc|vào|vao|khoảng|khoang)\s*)?(\d{1,2})(?:\s*[:h]\s*(\d{2})|\s*(?:giờ|gio)(?:\s*(\d{1,2}))?)\s*(sáng|sang|trưa|trua|chiều|chieu|tối|toi|đêm|dem)?/i;
+
 function vietnamParts(date) {
   const shifted = new Date(date.getTime() + VN_OFFSET_MS);
   return {
@@ -8,62 +11,29 @@ function vietnamParts(date) {
     day: shifted.getUTCDate(),
     hour: shifted.getUTCHours(),
     minute: shifted.getUTCMinutes(),
+    weekday: shifted.getUTCDay(),
   };
 }
 
 function makeVietnamDate(year, month, day, hour, minute) {
-  // Vietnam is UTC+7. Store timestamps as UTC instants.
   return new Date(Date.UTC(year, month - 1, day, hour - 7, minute, 0, 0));
 }
 
-function parseTime(text) {
-  const periodPattern = "(sáng|sang|trưa|trua|chiều|chieu|tối|toi|đêm|dem)";
-  let match =
-    text.match(new RegExp(
-      "\\b(?:lúc|luc|vào|vao|khoảng|khoang)?\\s*(\\d{1,2})\\s*[:h]\\s*(\\d{2})\\s*" + periodPattern + "?\\b",
-      "i",
-    ));
+function to24Hour(hour, period = "") {
+  const value = period.toLowerCase();
 
-  if (match) {
-    return {
-      hour: Number(match[1]),
-      minute: Number(match[2]),
-      period: match[3] ?? "",
-      phrase: match[0],
-      index: match.index ?? 0,
-    };
+  if (["sáng", "sang"].includes(value)) {
+    return hour === 12 ? 0 : hour;
   }
 
-  match =
-    text.match(new RegExp(
-      "\\b(?:lúc|luc|vào|vao|khoảng|khoang)\\s*(\\d{1,2})(?:\\s*(?:giờ|gio))?\\s*" + periodPattern + "?\\b",
-      "i",
-    )) ??
-    text.match(new RegExp(
-      "\\b(\\d{1,2})\\s*(?:giờ|gio)\\s*" + periodPattern + "?\\b",
-      "i",
-    ));
+  if (["trưa", "trua"].includes(value)) {
+    return hour < 11 ? hour + 12 : hour;
+  }
 
-  if (!match) return null;
-
-  const hourGroup = match[1];
-  const period = match[2] ?? "";
-  return {
-    hour: Number(hourGroup),
-    minute: 0,
-    period,
-    phrase: match[0],
-    index: match.index ?? 0,
-  };
-}
-
-function to24Hour(hour, period) {
-  const p = period.toLowerCase();
-  if (["sáng", "sang"].includes(p)) return hour === 12 ? 0 : hour;
-  if (["trưa", "trua"].includes(p)) return hour < 11 ? hour + 12 : hour;
-  if (["chiều", "chieu", "tối", "toi", "đêm", "dem"].includes(p)) {
+  if (["chiều", "chieu", "tối", "toi", "đêm", "dem"].includes(value)) {
     return hour < 12 ? hour + 12 : hour;
   }
+
   return hour;
 }
 
@@ -71,32 +41,42 @@ function parseSchedule(text, now) {
   const lower = text.toLowerCase();
 
   const relative = lower.match(
-    /\b(?:sau|trong)\s+(\d+)\s*(phút|phut|giờ|gio|tiếng|tieng|ngày|ngay)\b/i,
+    /\b(?:sau|trong)\s+(\d+)\s*(phút|phut|giờ|gio|tiếng|tieng|ngày|ngay)(?:\s+nữa)?/i,
   );
+
   if (relative) {
     const amount = Number(relative[1]);
     const unit = relative[2].toLowerCase();
+
+    if (amount < 1 || amount > 365) {
+      return { error: "Khoảng thời gian nhắc cần nằm trong giới hạn từ 1 đến 365 đơn vị." };
+    }
+
     const multiplier =
       ["phút", "phut"].includes(unit) ? 60_000 :
       ["giờ", "gio", "tiếng", "tieng"].includes(unit) ? 3_600_000 :
       86_400_000;
-    const dueAt = now.getTime() + amount * multiplier;
-    if (amount < 1 || amount > 365) {
-      return { error: "Khoảng thời gian nhắc cần nằm trong giới hạn hợp lý (1–365 đơn vị)." };
-    }
-    return { dueAt, schedulePhrase: relative[0] };
-  }
 
-  const time = parseTime(lower);
-  if (!time) {
     return {
-      error: "Mình chưa xác định được giờ nhắc. Bạn thử nói rõ giờ, ví dụ: “Nhắc cả nhà đón bé lúc 4 giờ chiều mai”.",
+      dueAt: now.getTime() + amount * multiplier,
+      schedulePhrase: relative[0],
     };
   }
 
-  let hour = to24Hour(time.hour, time.period);
-  const minute = time.minute;
-  if (time.hour < 0 || time.hour > 23 || minute < 0 || minute > 59 || hour > 23) {
+  const time = lower.match(TIME_PATTERN);
+
+  if (!time) {
+    return {
+      error:
+        "Mình chưa xác định được giờ nhắc. Bạn thử nói rõ giờ, ví dụ: “Nhắc cả nhà đón bé lúc 4 giờ chiều mai”.",
+    };
+  }
+
+  const rawHour = Number(time[1]);
+  const minute = Number(time[2] ?? time[3] ?? 0);
+  const hour = to24Hour(rawHour, time[4] ?? "");
+
+  if (rawHour < 0 || rawHour > 23 || hour > 23 || minute < 0 || minute > 59) {
     return { error: "Giờ nhắc chưa hợp lệ. Bạn kiểm tra lại giờ và phút nhé." };
   }
 
@@ -106,39 +86,77 @@ function parseSchedule(text, now) {
   let day = current.day;
   let hasExplicitDate = false;
 
-  const dateMatch = lower.match(/\bngày\s+(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{4}))?\b/i);
+  let dateMatch = lower.match(
+    /\bngày\s+(\d{1,2})\s*[/-]\s*(\d{1,2})(?:\s*[/-]\s*(\d{4}))?/i,
+  );
+
   if (dateMatch) {
     day = Number(dateMatch[1]);
     month = Number(dateMatch[2]);
     year = dateMatch[3] ? Number(dateMatch[3]) : year;
     hasExplicitDate = true;
-  } else if (/\bngày mai\b|\bmai\b/.test(lower)) {
-    const tomorrow = makeVietnamDate(year, month, day, 12, 0);
-    const nextDay = new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000);
-    const p = vietnamParts(nextDay);
-    ({ year, month, day } = p);
-    hasExplicitDate = true;
-  } else if (/\bhôm nay\b|\bhom nay\b|\btối nay\b|\bchiều nay\b/.test(lower)) {
-    hasExplicitDate = true;
   } else {
-    const weekdayMatch = lower.match(/\b(thứ\s+(hai|ba|tư|tu|năm|sáu|sau|bảy|bay)|chủ nhật|chu nhat)\b/);
+    dateMatch = lower.match(
+      /\bngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})(?:\s+năm\s+(\d{4}))?/i,
+    );
+
+    if (dateMatch) {
+      day = Number(dateMatch[1]);
+      month = Number(dateMatch[2]);
+      year = dateMatch[3] ? Number(dateMatch[3]) : year;
+      hasExplicitDate = true;
+    }
+  }
+
+  if (!hasExplicitDate && /\b(?:ngày\s+mai|mai|tomorrow)\b/i.test(lower)) {
+    const tomorrow = new Date(
+      makeVietnamDate(year, month, day, 12, 0).getTime() + 86_400_000,
+    );
+    const parts = vietnamParts(tomorrow);
+    ({ year, month, day } = parts);
+    hasExplicitDate = true;
+  } else if (
+    !hasExplicitDate &&
+    /\b(?:hôm nay|hom nay|chiều nay|tối nay|sáng nay|trưa nay)\b/i.test(lower)
+  ) {
+    hasExplicitDate = true;
+  }
+
+  if (!hasExplicitDate) {
+    const weekdayMatch = lower.match(
+      /\b(thứ\s+(?:hai|ba|tư|tu|năm|sáu|sau|bảy|bay)|chủ nhật|chu nhat)\b/i,
+    );
+
     if (weekdayMatch) {
       const weekdayText = weekdayMatch[1].replace(/\s+/g, " ");
-      const map = {
-        "chủ nhật": 0, "chu nhat": 0,
-        "thứ hai": 1, "thứ ba": 2, "thứ tư": 3, "thứ tu": 3,
-        "thứ năm": 4, "thứ sáu": 5, "thứ sau": 5,
-        "thứ bảy": 6, "thứ bay": 6,
+      const weekdayMap = {
+        "chủ nhật": 0,
+        "chu nhat": 0,
+        "thứ hai": 1,
+        "thứ ba": 2,
+        "thứ tư": 3,
+        "thứ tu": 3,
+        "thứ năm": 4,
+        "thứ sáu": 5,
+        "thứ sau": 5,
+        "thứ bảy": 6,
+        "thứ bay": 6,
       };
-      const shiftedNow = new Date(now.getTime() + VN_OFFSET_MS);
-      const currentWeekday = shiftedNow.getUTCDay();
-      let delta = (map[weekdayText] - currentWeekday + 7) % 7;
-      if (delta === 0 && (hour < current.hour || (hour === current.hour && minute <= current.minute))) {
-        delta = 7;
+
+      let daysAhead = (weekdayMap[weekdayText] - current.weekday + 7) % 7;
+      if (
+        daysAhead === 0 &&
+        (hour < current.hour || (hour === current.hour && minute <= current.minute))
+      ) {
+        daysAhead = 7;
       }
-      const chosenDay = new Date(makeVietnamDate(year, month, day, 12, 0).getTime() + delta * 86_400_000);
-      const p = vietnamParts(chosenDay);
-      ({ year, month, day } = p);
+
+      const chosenDay = new Date(
+        makeVietnamDate(year, month, day, 12, 0).getTime() +
+          daysAhead * 86_400_000,
+      );
+      const parts = vietnamParts(chosenDay);
+      ({ year, month, day } = parts);
       hasExplicitDate = true;
     }
   }
@@ -147,26 +165,44 @@ function parseSchedule(text, now) {
     return { error: "Ngày nhắc chưa hợp lệ. Bạn kiểm tra lại ngày/tháng nhé." };
   }
 
-  let due = makeVietnamDate(year, month, day, hour, minute);
-  if (!hasExplicitDate && due.getTime() <= now.getTime()) {
-    const nextDay = new Date(due.getTime() + 86_400_000);
-    due = nextDay;
-  } else if (due.getTime() <= now.getTime()) {
-    return { error: "Thời điểm đó đã qua. Bạn hãy chọn một thời điểm trong tương lai nhé." };
+  const due = makeVietnamDate(year, month, day, hour, minute);
+  const dueParts = vietnamParts(due);
+
+  if (
+    dueParts.year !== year ||
+    dueParts.month !== month ||
+    dueParts.day !== day
+  ) {
+    return { error: "Ngày nhắc không tồn tại. Bạn kiểm tra lại ngày/tháng nhé." };
   }
 
-  return { dueAt: due.getTime(), schedulePhrase: time.phrase };
+  if (!hasExplicitDate && due.getTime() <= now.getTime()) {
+    due.setTime(due.getTime() + 86_400_000);
+  } else if (due.getTime() <= now.getTime()) {
+    return {
+      error: "Thời điểm đó đã qua. Bạn hãy chọn một thời điểm trong tương lai nhé.",
+    };
+  }
+
+  return { dueAt: due.getTime(), schedulePhrase: time[0] };
 }
 
 function cleanReminderTitle(text) {
   return text
-    .replace(/^\s*(?:hãy\s+)?nhắc\s+(?:(?:tôi|mình|cả nhà|mọi người|gia đình)\s+)?/i, "")
-    .replace(/\b(?:sau|trong)\s+\d+\s*(?:phút|phut|giờ|gio|tiếng|tieng|ngày|ngay)\b/gi, "")
-    .replace(/\bngày\s+\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{4})?\b/gi, "")
-    .replace(/\b(?:ngày\s+mai|hôm\s+nay|hom\s+nay|mai|nay|tối\s+nay|chiều\s+nay)\b/gi, "")
-    .replace(/\b(?:thứ\s+(?:hai|ba|tư|tu|năm|sáu|sau|bảy|bay)|chủ\s+nhật|chu\s+nhat)\b/gi, "")
-    .replace(/\b(?:lúc|luc|vào|vao|khoảng|khoang)\s*\d{1,2}(?:\s*[:h]\s*\d{2}|\s*(?:giờ|gio)(?:\s*\d{2})?)?\s*(?:sáng|sang|trưa|trua|chiều|chieu|tối|toi|đêm|dem)?\b/gi, "")
-    .replace(/\b\d{1,2}\s*(?:[:h]\s*\d{2}|(?:giờ|gio)\s*\d{2}?)\s*(?:sáng|sang|trưa|trua|chiều|chieu|tối|toi|đêm|dem)?\b/gi, "")
+    .replace(
+      /^\s*(?:hãy\s+)?nhắc\s+(?:(?:tôi|mình|cả nhà|mọi người|gia đình)\s+)?/i,
+      "",
+    )
+    .replace(new RegExp(TIME_PATTERN.source, "gi"), " ")
+    .replace(
+      /\b(?:sau|trong)\s+\d+\s*(?:phút|phut|giờ|gio|tiếng|tieng|ngày|ngay)(?:\s+nữa)?/gi,
+      " ",
+    )
+    .replace(/\bngày\s+\d{1,2}\s*[/-]\s*\d{1,2}(?:\s*[/-]\s*\d{4})?/gi, " ")
+    .replace(/\bngày\s+\d{1,2}\s+tháng\s+\d{1,2}(?:\s+năm\s+\d{4})?/gi, " ")
+    .replace(/\b(?:ngày\s+mai|hôm\s+nay|hom\s+nay|chiều\s+nay|tối\s+nay|sáng\s+nay|trưa\s+nay|tomorrow)\b/gi, " ")
+    .replace(/\b(?:thứ\s+(?:hai|ba|tư|tu|năm|sáu|sau|bảy|bay)|chủ\s+nhật|chu\s+nhat)\b/gi, " ")
+    .replace(/\b(?:lúc|luc|vào|vao|khoảng|khoang)\b/gi, " ")
     .replace(/[,.!?;:–—-]+$/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -175,24 +211,39 @@ function cleanReminderTitle(text) {
 export function parseReminderRequest(text, now = new Date()) {
   const lower = text.toLowerCase().trim();
 
-  if (/^(?:xem|liệt kê|liet ke|danh sách|danh sach|các|cac).*(?:lịch nhắc|lịch hẹn|nhắc hẹn|nhắc nhở|lịch)$/i.test(lower) ||
-      /^(?:lịch nhắc|lịch hẹn|nhắc hẹn|nhắc nhở)$/i.test(lower)) {
+  if (
+    /^(?:(?:cho tôi xem|xem|liệt kê|liet ke|danh sách|danh sach)\s+)?(?:các\s+)?(?:lịch nhắc|lịch hẹn|nhắc hẹn|nhắc nhở)(?:\s+(?:của tôi|hôm nay|hom nay))?$/i.test(lower)
+  ) {
     return { type: "list" };
   }
 
-  const cancel = lower.match(/(?:hủy|huy|xóa|xoa|bỏ|bo).{0,30}?(?:lịch\s*)?(?:nhắc|nhac|hẹn|hen).{0,15}?(?:số|so|thứ|thu)?\s*(\d+)/i);
-  if (cancel) return { type: "cancel", number: Number(cancel[1]) };
+  const cancel = lower.match(
+    /(?:hủy|huỷ|huy|xóa|xoá|xoa|bỏ|bo)\s+(?:lịch\s+)?(?:nhắc|nhac|hẹn|hen)(?:\s+(?:lịch\s+)?(?:số|so))?\s*(\d+)/i,
+  );
 
-  if (!/\bnhắc\b|\bnhac\b/i.test(lower)) return { type: "none" };
+  if (cancel) {
+    return { type: "cancel", number: Number(cancel[1]) };
+  }
+
+  if (!/\bnhắc\b|\bnhac\b/i.test(lower)) {
+    return { type: "none" };
+  }
 
   const schedule = parseSchedule(text, now);
-  if (schedule.error) return { type: "invalid", reply: schedule.error };
+  if (schedule.error) {
+    return { type: "invalid", reply: schedule.error };
+  }
 
   const title = cleanReminderTitle(text);
-  if (!title || /^(?:tôi|mình|cả nhà|mọi người|gia đình)?\s*$/i.test(title)) {
+
+  if (
+    !title ||
+    /^(?:tôi|mình|cả nhà|mọi người|gia đình)?\s*$/i.test(title)
+  ) {
     return {
       type: "invalid",
-      reply: "Bạn muốn nhắc việc gì? Ví dụ: “Nhắc cả nhà đón em bé lúc 4 giờ chiều mai”.",
+      reply:
+        "Bạn muốn nhắc việc gì? Ví dụ: “Nhắc cả nhà đón em bé lúc 4 giờ chiều mai”.",
     };
   }
 
